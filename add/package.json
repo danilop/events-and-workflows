@@ -1,0 +1,9 @@
+{
+  "name": "add",
+  "version": "1.0.0",
+  "description": "utility function to add numbers",
+  "main": "app.js",
+  "repository": "https://github.com/",
+  "author": "AWS DevRel",
+  "license": "MIT"
+}

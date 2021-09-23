@@ -1,0 +1,335 @@
+{
+    "Comment": "Create Order - Input: { customerId, itemId }",
+    "StartAt": "Reserve Item",
+    "States": {
+      "Reserve Item": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/inventory/reserve/{}', $.itemId)",
+          "AuthType": "NO_AUTH"
+        },
+        "Next": "Get Price",
+        "ResultPath": "$.order",
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "ApiGateway.404"
+            ],
+            "Next": "Item Not Available",
+            "Comment": "Not Available"
+          }
+        ],
+        "ResultSelector": {
+          "orderId.$": "$$.Execution.StartTime"
+        }
+      },
+      "Unreserve Item": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/inventory/unreserve/{}', $.itemId)",
+          "AuthType": "NO_AUTH"
+        },
+        "Next": "Payment Failed",
+        "ResultPath": "$.TaskResult"
+      },
+      "Item Not Available": {
+        "Type": "Pass",
+        "End": true
+      },
+      "Payment Failed": {
+        "Type": "Pass",
+        "End": true
+      },
+      "Get Price": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/inventory/describe/{}', $.itemId)",
+          "AuthType": "NO_AUTH"
+        },
+        "Next": "Get Customer Address",
+        "ResultPath": "$.item",
+        "ResultSelector": {
+          "price.$": "$.ResponseBody[0].price"
+        }
+      },
+      "Get Customer Address": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/customer/describe/{}', $.customerId)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": "$.customer",
+        "Next": "Estimate Delivery",
+        "ResultSelector": {
+          "name.$": "$.ResponseBody[0].name",
+          "address.$": "$.ResponseBody[0].address"
+        }
+      },
+      "Estimate Delivery": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/delivery/estimate/{}', $.customer.address)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": "$.deliveryEstimate",
+        "Next": "Prepare Numbers To Add",
+        "ResultSelector": {
+          "distance.$": "$.ResponseBody.Distance",
+          "distanceUnit.$": "$.ResponseBody.DistanceUnit",
+          "durationSeconds.$": "$.ResponseBody.DurationSeconds",
+          "price.$": "$.ResponseBody.price"
+        }
+      },
+      "Prepare Numbers To Add": {
+        "Type": "Pass",
+        "Next": "Add Numbers",
+        "Parameters": {
+          "numbers.$": "States.Array($.item.price, $.deliveryEstimate.price)"
+        },
+        "ResultPath": "$.add"
+      },
+      "Add Numbers": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "Payload.$": "$",
+          "FunctionName": "${AddFunctionArn}:$LATEST"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "Next": "Make Payment",
+        "ResultPath": "$.payment",
+        "ResultSelector": {
+          "total.$": "$.Payload.result"
+        }
+      },
+      "Make Payment": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/payment/pay/{}', $.payment.total)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": "$.paid",
+        "Next": "Remove Item",
+        "ResultSelector": {
+          "paymentId.$": "$.ResponseBody.paymentId",
+          "status.$": "$.ResponseBody.status"
+        },
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "ApiGateway.401"
+            ],
+            "Next": "Unreserve Item",
+            "ResultPath": "$.notPaid"
+          }
+        ]
+      },
+      "Remove Item": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/inventory/remove/{}', $.itemId)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": null,
+        "Next": "Start Delivery"
+      },
+      "Start Delivery": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/delivery/start/{}/{}/{}', $.customerId, $.order.orderId, $.customer.address)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": "$.delivery",
+        "Next": "Write Order",
+        "ResultSelector": {
+          "status.$": "$.ResponseBody.status"
+        }
+      },
+      "Write Order": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::dynamodb:putItem",
+        "Parameters": {
+          "TableName": "${OrderTable}",
+          "Item": {
+            "customerId": {
+              "S.$": "$.customerId"
+            },
+            "orderId": {
+              "S.$": "$.order.orderId"
+            },
+            "orderStatus": {
+              "S.$": "$.delivery.status"
+            },
+            "itemId": {
+              "S.$": "$.itemId"
+            },
+            "itemPrice": {
+              "N.$": "States.Format('{}', $.item.price)"
+            },
+            "deliveryPrice": {
+              "N.$": "States.Format('{}', $.deliveryEstimate.price)"
+            },
+            "totalPrice": {
+              "N.$": "States.Format('{}', $.payment.total)"
+            },
+            "paymentId": {
+              "S.$": "$.paid.paymentId"
+            },
+            "deliveryAddress": {
+              "S.$": "$.customer.address"
+            },
+            "orderDate": {
+              "S.$": "$$.State.EnteredTime"
+            },
+            "updateDate": {
+              "S.$": "$$.State.EnteredTime"
+            }
+          }
+        },
+        "Next": "Wait 5 Seconds",
+        "ResultPath": null
+      },
+      "Wait 5 Seconds": {
+        "Type": "Wait",
+        "Seconds": 5,
+        "Next": "Check Delivery"
+      },
+      "Check Delivery": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/delivery/describe/{}/{}', $.customerId, $.order.orderId)",
+          "AuthType": "NO_AUTH"
+        },
+        "ResultPath": "$.delivery",
+        "ResultSelector": {
+          "status.$": "$.ResponseBody[0].status"
+        },
+        "Next": "Delivering?"
+      },
+      "Delivering?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Not": {
+              "Variable": "$.delivery.status",
+              "StringMatches": "DELIVERING"
+            },
+            "Next": "UpdateOrder"
+          }
+        ],
+        "Default": "Wait 5 Seconds"
+      },
+      "UpdateOrder": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::dynamodb:updateItem",
+        "Parameters": {
+          "TableName": "${OrderTable}",
+          "Key": {
+            "customerId": {
+              "S.$": "$.customerId"
+            },
+            "orderId": {
+              "S.$": "$.order.orderId"
+            }
+          },
+          "UpdateExpression": "SET orderStatus = :newStatus, updateDate = :newUpdateDate",
+          "ExpressionAttributeValues": {
+            ":newStatus": {
+              "S.$": "$.delivery.status"
+            },
+            ":newUpdateDate": {
+              "S.$": "$$.State.EnteredTime"
+            }
+          }
+        },
+        "Next": "Delivered?",
+        "ResultPath": null
+      },
+      "Delivered?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Not": {
+              "Variable": "$.delivery.status",
+              "StringMatches": "DELIVERED"
+            },
+            "Next": "Cancel Payment"
+          }
+        ],
+        "Default": "Delivered"
+      },
+      "Cancel Payment": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/payment/cancel/{}', $.paid.paymentId)",
+          "AuthType": "NO_AUTH"
+        },
+        "Next": "Return Item",
+        "ResultPath": "$.paid",
+        "ResultSelector": {
+          "status.$": "$.ResponseBody[0].status"
+        }
+      },
+      "Return Item": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::apigateway:invoke",
+        "Parameters": {
+          "ApiEndpoint": "${ServerlessHttpApiId}.execute-api.${AWSRegion}.amazonaws.com",
+          "Method": "GET",
+          "Path.$": "States.Format('/inventory/return/{}', $.itemId)",
+          "AuthType": "NO_AUTH"
+        },
+        "Next": "Item Returned",
+        "ResultPath": null
+      },
+      "Item Returned": {
+        "Type": "Pass",
+        "End": true
+      },
+      "Delivered": {
+        "Type": "Pass",
+        "End": true
+      }
+    }
+  }

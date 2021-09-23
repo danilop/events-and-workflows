@@ -1,0 +1,13 @@
+{
+  "name": "inventory",
+  "version": "1.0.0",
+  "description": "inventory service",
+  "main": "app.js",
+  "repository": "https://github.com/",
+  "author": "AWS DevRel",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.33.0",
+    "@aws-sdk/lib-dynamodb": "^3.33.0"
+  }
+}
