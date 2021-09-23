@@ -26,10 +26,12 @@ Delivery - to estimate distance and cost of a delivery, and to start, complete, 
 
 On the Amazon API Gateway REST API endpoint (starting a workflow):
 
+```
 GET /order/create/{customerId}/{orderId}
-
+```
 On the Amazon API Gateway HTTP API endpoint:
 
+```
 GET /customer/describe/{customerId}
 GET /order/describe/{customerId}/{orderId}
 GET /inventory/describe/{itemId}
@@ -45,6 +47,7 @@ GET /delivery/describe/{customerId}/{orderId}
 GET /delivery/cancel/{customerId}/{orderId}
 GET /delivery/delivered/{customerId}/{orderId}
 GET /delivery/estimate/{address}
+```
 
 # Demo
 
