@@ -5,13 +5,13 @@ Start by building and deploying the projext:
 ```bash
 sam build -p # Parallel build
 
-sam deploy -g # Guided deployment, 
+sam deploy -g # Guided deployment
 ```
 
 Next times, when you update the code, you can build and deploy with:
 
 ```bash
-sam build -c -p && sam deploy # Caching previous builds
+sam build -c -p && sam deploy # Also caching previous builds
 ```
 
 # Services
