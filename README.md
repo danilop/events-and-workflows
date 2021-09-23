@@ -90,6 +90,16 @@ For example:
 curl -i https://sam9cycaik.execute-api.eu-west-1.amazonaws.com/delivery/delivered/customer-1/2021-09-23T13:15:06.510Z
 ```
 
+To check the order status (works only when in delivery) :
+
+```bash
+curl -i <OrderApi>/describe/<customerId>/<orderId>
+```
+
+For example:
+
+curl -i https://sam9cycaik.execute-api.eu-west-1.amazonaws.com/order/describe/customer-1/2021-09-23T13:15:06.510Z
+
 To cancel the delivery, replace `delivered` with `cancel`.
 
 ```bash
@@ -101,3 +111,7 @@ For example:
 ```bash
 curl -i https://sam9cycaik.execute-api.eu-west-1.amazonaws.com/delivery/cancel/customer-1/2021-09-23T13:15:06.510Z
 ```
+
+You can check again the order status to see that is now delivered or canceled.
+
+If the order is canceled, the payment is canceled to and the item is returned to the inventory.
