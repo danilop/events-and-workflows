@@ -98,7 +98,9 @@ curl -i <OrderApi>/describe/<customerId>/<orderId>
 
 For example:
 
+```bash
 curl -i https://sam9cycaik.execute-api.eu-west-1.amazonaws.com/order/describe/customer-1/2021-09-23T13:15:06.510Z
+```
 
 To cancel the delivery, replace `delivered` with `cancel`.
 
