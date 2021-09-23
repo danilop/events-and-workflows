@@ -16,11 +16,11 @@ sam build -c -p && sam deploy # Also caching previous builds
 
 # Services
 
-Customer - customer information such as name, address, and email
-Order - to create an order orchestrating all other services, and describe the order status
-Inventory - to store inventory information of items to sell
-Payment - to make and cancel payments, it can randomly fail (see Demo below)
-Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
+* Customer - customer information such as name, address, and email
+* Order - to create an order orchestrating all other services, and describe the order status
+* Inventory - to store inventory information of items to sell
+* Payment - to make and cancel payments, it can randomly fail (see Demo below)
+* Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
 
 # Operations
 
