@@ -1,5 +1,6 @@
 const { DynamoDB } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocument, ExecuteStatementCommand } = require("@aws-sdk/lib-dynamodb");
+const { EventBridgeClient, PutEventsCommand } = require("@aws-sdk/client-eventbridge");
 
 const { 
     v4: uuidv4,
@@ -7,39 +8,70 @@ const {
 
 const ddbClient = new DynamoDB();
 const ddbDocClient = DynamoDBDocument.from(ddbClient);
+const ebClient = new EventBridgeClient();
 
+const EVENT_SOURCE="Payment";
+const EVENT_BUS = process.env.EVENT_BUS;
 const PAYMENT_TABLE = process.env.PAYMENT_TABLE;
-
 const PAYMENT_FAIL_PROBABILITY = process.env.PAYMENT_FAIL_PROBABILITY; // Between 0 and 1
 
 exports.lambdaHandler = async (event, context) => {
 
-    const method = event.requestContext.http.method;
-    const action = event.pathParameters.action;
-    const what = event.pathParameters.what;
+    const eventType = event['detail-type'];
 
-    let response;
+    if (eventType !== undefined) {
 
-    switch(method) {
-        case 'GET' : switch(action) {
-            case 'pay':
-                response = await makePayment(what);
+        // EventBridge Invocation
+        const order = event.detail;
+
+        switch(eventType) {
+            case 'DeliveryEstimated':
+                const totalPrice = order.item.price + order.delivery.price;
+                await processPayment(await makePayment(totalPrice),
+                    'PaymentMade', 'PaymentFailed', order, 'payment');
                 break;
-            case 'describe':
-                response = await describePayment(what);
+            case 'ItemReturned':
+                await processPayment(await cancelPayment(order.order.paymentId),
+                    'PaymentCanceled', 'ErrorPaymentCanceled', order, 'payment');
                 break;
-            case 'cancel':
-                response = await cancelPayment(what);
-                break;
-            default:
-                response = {
-                    statusCode: 501,
-                    body: `Action '${action}' not implemented.`
-                };
+                default:
+                console.error(`Action '${action}' not implemented.`);
         }
-    }
+    } else {
 
-    return response;
+        // API Gateway Invocation
+        const method = event.requestContext.http.method;
+        const action = event.pathParameters.action;
+        const what = event.pathParameters.what;
+
+        let result;
+
+        switch(method) {
+            case 'GET' : switch(action) {
+                case 'pay':
+                    result = await makePayment(what);
+                    break;
+                case 'describe':
+                    result = await describePayment(what);
+                    break;
+                case 'cancel':
+                    result = await cancelPayment(what);
+                    break;
+                default:
+                    return {
+                        statusCode: 501,
+                        body: `Action '${action}' not implemented.`
+                    };
+            }
+        }
+
+        const response = {
+            statusCode: result.length > 0 ? (result[0].status != 'FAILED' ? 201 : 401) : 404,
+            body: result.length > 0? JSON.stringify(result[0]) : "Not Found"
+        };
+    
+        return response;
+    }
 };
 
 function shouldPaymentFail() {
@@ -54,10 +86,7 @@ async function describePayment(paymentId) {
     };
     const payments = await executeStatement(params);
 
-    return {
-        statusCode: payments.length > 0 ? 200 : 404,
-        body: JSON.stringify(payments)
-    }
+    return payments;
 }
 
 async function makePayment(amount) {
@@ -76,13 +105,10 @@ async function makePayment(amount) {
     await executeStatement(params);
 
     return {
-        statusCode: failed ? 401 : 201,
-        body: JSON.stringify({
-            paymentId: paymentId,
-            paymentMethod: 'CREDIT_CARD',
-            amount: amount,
-            status: status
-        })
+        paymentId: paymentId,
+        paymentMethod: 'CREDIT_CARD',
+        amount: amount,
+        status: status
     }
 }
 
@@ -93,14 +119,39 @@ async function cancelPayment(paymentId) {
         SET status = 'CANCELED'
         WHERE paymentId = '${paymentId}'
         AND status = 'PAID'
-        RETURNING MODIFIED NEW *`
+        RETURNING ALL NEW *`
     }
     const payments = await executeStatement(params);
 
-    return {
-        statusCode: payments.length > 0 ? 200 : 404,
-        body: JSON.stringify(payments)
+    console.log(payments);
+
+    return payments;
+}
+
+async function processPayment(payment, OK, KO, output, add) {
+    if (add !== undefined) {
+        output[add] = payment;
     }
+    if (payment.length > 0 || payment.status == 'PAID') {
+        await sendEvent(OK, output);
+    } else {
+        await sendEvent(KO, output);
+    }
+}
+
+async function sendEvent(type, detail) {
+    const params = {
+        "Entries": [ 
+           { 
+              "Detail": JSON.stringify(detail),
+              "DetailType": type,
+              "EventBusName": EVENT_BUS,
+              "Source": EVENT_SOURCE
+           }
+        ]
+    };
+    const response = await ebClient.send(new PutEventsCommand(params));
+    return [response];
 }
 
 async function executeStatement(params) {

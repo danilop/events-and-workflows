@@ -11,7 +11,55 @@ Globals:
 
 Resources:
 
-  ### Inventory
+  ### Event Bus
+
+  AppEventBus:
+    Type: AWS::Events::EventBus
+    Properties: 
+      Name: !Sub AppEventBus-${AWS::StackName}
+
+  ### Event Sourcing / Event Store
+          
+  EventStoreTable: # customerId, timestamp, eventType, eventDetail
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: 
+        - AttributeName: "who"
+          AttributeType: "S"
+        - AttributeName: "timeWhat"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "who" # C + customerId
+          KeyType: "HASH"
+        - AttributeName: "timeWhat" # Timestamp + event type
+          KeyType: "RANGE"
+
+  EventStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: event-store/
+      Handler: app.lambdaHandler
+      Runtime: nodejs14.x
+      Environment:
+        Variables:
+          STORE_TABLE: !Ref EventStoreTable
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:PartiQLInsert
+            Resource: !GetAtt EventStoreTable.Arn
+      Events:
+        StoreEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern: {"source": [{"prefix": ""}]} # To match all events
+            DeadLetterConfig:
+              Type: SQS
+
+  ### Order
 
   OrderTable: # customerId, orderId, status (CREATED, RESERVED, PAID, DELIVERING, DELIVERED, CANCELED), itemId, itemPrice, deliveryPrice, totalPrice, paymentId, deliveryAddress, orderDate (timestamp), updateDate (timestamp)
     Type: AWS::DynamoDB::Table
@@ -27,6 +75,91 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "orderId" # Timestamp with ms precision
           KeyType: "RANGE"
+
+  OrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: order/
+      Handler: app.lambdaHandler
+      Runtime: nodejs14.x
+      Environment:
+        Variables:
+          ORDER_TABLE: !Ref OrderTable
+          EVENT_BUS: !Ref AppEventBus
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:PartiQLSelect
+              - dynamodb:PartiQLInsert
+              - dynamodb:PartiQLUpdate
+              - dynamodb:PartiQLDelete
+            Resource: !GetAtt OrderTable.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt AppEventBus.Arn
+      Events:
+        OrderEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern:
+              detail-type:
+              - OrderCreate
+              - PaymentMade
+              - PaymentFailed
+              - PaymentCanceled
+              - DeliveryStarted
+              - DeliveryWasDelivered
+              - DeliveryWasCanceled
+            DeadLetterConfig:
+              Type: SQS
+        OrderGet:
+          Type: HttpApi
+          Properties:
+            Path: /order/{action}/{customerId}/{what}
+            Method: GET
+        OrderPost:
+          Type: HttpApi
+          Properties:
+            Path: /order/{action}
+            Method: POST
+
+  OrderCreateWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: order-workflow/order-create.asl.json
+      DefinitionSubstitutions:
+        ServerlessHttpApiId: !Sub ${ServerlessHttpApi}
+        AWSRegion: !Sub ${AWS::Region}
+        OrderTable: !Ref OrderTable
+        AddFunctionArn: !GetAtt AddFunction.Arn
+      Type: STANDARD
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            Resource:
+            - !GetAtt OrderTable.Arn
+          - Effect: Allow
+            Action:
+            - lambda:InvokeFunction
+            Resource:
+            - !GetAtt AddFunction.Arn
+            - !Sub ${AddFunction.Arn}:*
+      Events:
+        OrderWorkflowPost:
+          Type: Api
+          Properties:
+            Path: /order
+            Method: POST
+
+  ### Inventory
 
   InventoryTable: # itemId, description, image (S3 URL in the format “s3://…”), price, available, reserved
     Type: AWS::DynamoDB::Table
@@ -48,6 +181,7 @@ Resources:
       Environment:
         Variables:
           INVENTORY_TABLE: !Ref InventoryTable
+          EVENT_BUS: !Ref AppEventBus
       Policies:
         - Statement:
           - Effect: Allow
@@ -57,7 +191,24 @@ Resources:
               - dynamodb:PartiQLUpdate
               - dynamodb:PartiQLDelete
             Resource: !GetAtt InventoryTable.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt AppEventBus.Arn
       Events:
+        InventoryEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern:
+              detail-type:
+              - OrderCreated
+              - OrderCanceled
+              - ItemReserved
+              - PaymentMade
+              - PaymentFailed
+            DeadLetterConfig:
+              Type: SQS
         InventoryGet:
           Type: HttpApi
           Properties:
@@ -92,6 +243,7 @@ Resources:
         Variables:
           PAYMENT_TABLE: !Ref PaymentTable
           PAYMENT_FAIL_PROBABILITY: 0.2 # Between 0 and 1
+          EVENT_BUS: !Ref AppEventBus
       Policies:
         - Statement:
           - Effect: Allow
@@ -101,7 +253,21 @@ Resources:
               - dynamodb:PartiQLUpdate
               - dynamodb:PartiQLDelete
             Resource: !GetAtt PaymentTable.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt AppEventBus.Arn
       Events:
+        PaymentEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern:
+              detail-type:
+              - DeliveryEstimated
+              - ItemReturned
+            DeadLetterConfig:
+              Type: SQS
         PaymentGet:
           Type: HttpApi
           Properties:
@@ -135,13 +301,27 @@ Resources:
       Environment:
         Variables:
           CUSTOMER_TABLE: !Ref CustomerTable
+          EVENT_BUS: !Ref AppEventBus
       Policies:
         - Statement:
           - Effect: Allow
             Action:
               - dynamodb:PartiQLSelect
             Resource: !GetAtt CustomerTable.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt AppEventBus.Arn
       Events:
+        CustomerEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern:
+              detail-type:
+              - ItemDescribed
+            DeadLetterConfig:
+              Type: SQS
         CustomerGet:
           Type: HttpApi
           Properties:
@@ -153,19 +333,19 @@ Resources:
             Path: /customer/{action}
             Method: POST
 
-  # Delivery
+  ### Delivery
 
   MyPlaceIndex:
     Type: AWS::Location::PlaceIndex
     Properties: 
-      IndexName: my-place-index
+      IndexName: !Sub my-place-index-${AWS::StackName}
       DataSource: Esri
       PricingPlan: RequestBasedUsage
 
   MyRouteCalculator:
     Type: AWS::Location::RouteCalculator
     Properties: 
-      CalculatorName: my-route-calculator
+      CalculatorName: !Sub my-route-calculator-${AWS::StackName}
       DataSource: Esri
       PricingPlan: RequestBasedUsage
   
@@ -195,6 +375,7 @@ Resources:
           PLACE_INDEX: !Ref MyPlaceIndex
           ROUTE_CALCULATOR: !Ref MyRouteCalculator
           DELIVERY_TABLE: !Ref DeliveryTable
+          EVENT_BUS: !Ref AppEventBus
       Policies:
         - Statement:
           - Effect: Allow
@@ -212,7 +393,23 @@ Resources:
             Action:
               - geo:CalculateRoute 
             Resource: !GetAtt MyRouteCalculator.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt AppEventBus.Arn
       Events:
+        DeliveryEvent:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref AppEventBus
+            Pattern:
+              detail-type:
+              - CustomerDescribed
+              - ItemRemoved
+              - Delivered
+              - DeliveryCanceled
+            DeadLetterConfig:
+              Type: SQS
         DeliveryGet:
           Type: HttpApi
           Properties:
@@ -229,69 +426,7 @@ Resources:
             Path: /delivery/{action}/{address}
             Method: GET
 
-  # Order
-
-  OrderFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: order/
-      Handler: app.lambdaHandler
-      Runtime: nodejs14.x
-      Environment:
-        Variables:
-          ORDER_TABLE: !Ref OrderTable
-      Policies:
-        - Statement:
-          - Effect: Allow
-            Action:
-              - dynamodb:PartiQLSelect
-            Resource: !GetAtt OrderTable.Arn
-      Events:
-        OrderGet:
-          Type: HttpApi
-          Properties:
-            Path: /order/{action}/{customerId}/{orderId}
-            Method: GET
-        OrderPost:
-          Type: HttpApi
-          Properties:
-            Path: /order/{action}
-            Method: POST
-
-  CreateOrderWorkflow:
-    Type: AWS::Serverless::StateMachine
-    Properties:
-      DefinitionUri: create-order/create-order.asl.json
-      DefinitionSubstitutions:
-        ServerlessHttpApiId: !Sub ${ServerlessHttpApi}
-        AWSRegion: !Sub ${AWS::Region}
-        OrderTable: !Ref OrderTable
-        AddFunctionArn: !GetAtt AddFunction.Arn
-      Type: STANDARD
-      Policies:
-        - Statement:
-          - Effect: Allow
-            Action:
-            - dynamodb:GetItem
-            - dynamodb:PutItem
-            - dynamodb:UpdateItem
-            - dynamodb:DeleteItem
-            Resource:
-            - !GetAtt OrderTable.Arn
-          - Effect: Allow
-            Action:
-            - lambda:InvokeFunction
-            Resource:
-            - !GetAtt AddFunction.Arn
-            - !Sub ${AddFunction.Arn}:*
-      Events:
-        CreateOrder:
-          Type: Api
-          Properties:
-            Path: /order
-            Method: POST
-
-  # Utility Functions
+  ### Utility Functions
           
   AddFunction:
     Type: AWS::Serverless::Function
@@ -302,41 +437,45 @@ Resources:
 
 Outputs:
 
+  EventStoreTable:
+    Description: "Event Store Table"
+    Value: !Ref EventStoreTable
+
   InventoryTable:
     Description: "Inventory Table"
     Value: !Ref InventoryTable
   InventoryApi:
-    Description: "API Gateway endpoint URL for Prod stage for Inventory function"
+    Description: "API Gateway endpoint URL for Inventory function"
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/inventory/{action}/{itemId}"
 
   PaymentTable:
     Description: "Payment Table"
     Value: !Ref PaymentTable
   PaymentApi:
-    Description: "API Gateway endpoint URL for Prod stage for Payment function"
+    Description: "API Gateway endpoint URL for Payment function"
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/payment/{action}/{what}"
 
   CustomerTable:
     Description: "Customer Table"
     Value: !Ref CustomerTable
   CustomerApi:
-    Description: "API Gateway endpoint URL for Prod stage for Customer function"
+    Description: "API Gateway endpoint URL for Customer function"
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/customer/{action}/{customerId}"
 
   DeliveryTable:
     Description: "Delivery Table"
     Value: !Ref DeliveryTable
   DeliveryApi:
-    Description: "API Gateway endpoint URL for Prod stage for Delivery function"
+    Description: "API Gateway endpoint URL for Delivery function"
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/delivery"
 
   OrderTable:
     Description: "Order Table"
     Value: !Ref OrderTable
-  DescribeOrderApi:
-    Description: "API Gateway endpoint URL for Prod stage for Delivery function"
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/order"
-  CreateOrderApi:
-    Description: "API Gateway endpoint URL for Prod stage for Order workflow"
+  OrderApi:
+    Description: "API Gateway endpoint URL for Order function"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/order/{action}/{customerId}/{what}"
+  OrderCreateWorkflowApi:
+    Description: "API Gateway endpoint URL for Create Order workflow"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/order"
 

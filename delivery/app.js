@@ -1,11 +1,15 @@
 const { DynamoDB } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocument, ExecuteStatementCommand } = require("@aws-sdk/lib-dynamodb");
 const { LocationClient, SearchPlaceIndexForTextCommand, CalculateRouteCommand } = require("@aws-sdk/client-location");
+const { EventBridgeClient, PutEventsCommand } = require("@aws-sdk/client-eventbridge");
 
 const ddbClient = new DynamoDB();
 const ddbDocClient = DynamoDBDocument.from(ddbClient);
 const locationClient = new LocationClient();
+const ebClient = new EventBridgeClient();
 
+const EVENT_SOURCE="Delivery";
+const EVENT_BUS = process.env.EVENT_BUS;
 const PLACE_INDEX = process.env.PLACE_INDEX;
 const ROUTE_CALCULATOR = process.env.ROUTE_CALCULATOR;
 const DELIVERY_TABLE = process.env.DELIVERY_TABLE;
@@ -16,44 +20,84 @@ var startAddressPlace;
 
 exports.lambdaHandler = async (event, context) => {
 
-    const method = event.requestContext.http.method;
-    const action = event.pathParameters.action;
-    const customerId = event.pathParameters.customerId;
-    const orderId = event.pathParameters.orderId;
-    const address = event.pathParameters.address;
-
     if (startAddressPlace === undefined) {
         startAddressPlace = await getPlaceFromAddress(START_ADDRESS);
     }
 
-    let response;
+    const eventType = event['detail-type'];
 
-    switch(method) {
-        case 'GET' : switch(action) {
-            case 'start':
-                response = await startDelivery(customerId, orderId, address);
+    if (eventType !== undefined) {
+
+        // EventBridge Invocation
+        const order = event.detail;
+
+        switch(eventType) {
+            case 'CustomerDescribed':
+                await processResult(await estimateDelivery(order.customer.address),
+                    "DeliveryEstimated", "ErrorDeliveryEstimated",
+                    order, "delivery");
                 break;
-            case 'describe':
-                response = await describeDelivery(customerId, orderId);
+            case 'ItemRemoved':
+                await processResult(await startDelivery(order.customerId, order.orderId, order.customer.address),
+                    "DeliveryStarted", "ErrorDeliveryStarted",
+                    order, "delivery");
                 break;
-            case 'cancel':
-                response = await cancelDelivery(customerId, orderId);
+            case 'Delivered':
+                await processResult(await delivered(order.customerId, order.orderId),
+                    "DeliveryWasDelivered", "ErrorDeliveryWasDelivered",
+                    order, "delivery");
                 break;
-            case 'delivered':
-                response = await delivered(customerId, orderId);
-                break;
-            case 'estimate':
-                response = await estimateDelivery(address);
+            case 'DeliveryCanceled':
+                await processResult(await cancelDelivery(order.customerId, order.orderId),
+                    "DeliveryWasCanceled", "ErrorDeliveryWasCanceled",
+                    order, "delivery");
                 break;
             default:
-                response = {
-                    statusCode: 501,
-                    body: `Action '${action}' not implemented.`
-                };
+            console.error(`Action '${action}' not implemented.`);
         }
-    }
+    } else {
 
-    return response;
+        // API Gateway Invocation
+        const method = event.requestContext.http.method;
+        const action = event.pathParameters.action;
+        const customerId = event.pathParameters.customerId;
+        const orderId = event.pathParameters.orderId;
+        const address = event.pathParameters.address;
+
+        let result;
+
+        switch(method) {
+            case 'GET' : switch(action) {
+                case 'start':
+                    result = await startDelivery(customerId, orderId, address);
+                    break;
+                case 'describe':
+                    result = await describeDelivery(customerId, orderId);
+                    break;
+                case 'cancel':
+                    result = await cancelDelivery(customerId, orderId);
+                    break;
+                case 'delivered':
+                    result = await delivered(customerId, orderId);
+                    break;
+                case 'estimate':
+                    result = await estimateDelivery(address);
+                    break;
+                default:
+                    return {
+                        statusCode: 501,
+                        body: `Action '${action}' not implemented.`
+                    };
+            }
+        }
+
+        const response = {
+            statusCode: result.length > 0 ? 200 : 404,
+            body: result.length > 0? JSON.stringify(result[0]) : "Not Found"
+        };
+    
+        return response;
+    }
 };
 
 async function getPlaceFromAddress(address) {
@@ -87,10 +131,7 @@ async function getRouteSummaryFor(address) {
 
 async function estimateDelivery(address) {
     const delivery = await getRouteSummaryFor(address);
-    return {
-        statusCode: 200,
-        body: JSON.stringify(delivery)
-    };
+    return [delivery];
 }
 
 async function describeDelivery(customerId, orderId) {
@@ -102,70 +143,83 @@ async function describeDelivery(customerId, orderId) {
     };
     const deliveries = await executeStatement(params);
 
-    return {
-        statusCode: deliveries.length > 0 ? 200 : 404,
-        body: JSON.stringify(deliveries)
-    }
+    return deliveries;
 }
 
 async function startDelivery(customerId, orderId, address) {
 
-    const status = 'DELIVERING';
+    const deliveryStatus = 'DELIVERING';
     const routeSummary = await getRouteSummaryFor(address);
 
     const delivery =
         `{'customerId' : '${customerId}', 'orderId' : '${orderId}',
-        'address' : '${address}', 'status' : '${status}',
+        'address' : '${address}', 'deliveryStatus' : '${deliveryStatus}',
         'price' : ${routeSummary.price}}`;
-    console.log(delivery);
     const params = {
         Statement: `INSERT INTO "${DELIVERY_TABLE}" VALUE ${delivery}`
     }
     await executeStatement(params);
 
-    return {
-        statusCode: 201,
-        body: JSON.stringify({
-            customerId: customerId,
-            orderId: orderId,
-            address: address,
-            status: status
-        })
-    }
+    return [{
+        customerId: customerId,
+        orderId: orderId,
+        address: address,
+        deliveryStatus: deliveryStatus
+    }];
 }
 
 async function cancelDelivery(customerId, orderId) {
 
     const params = {
         Statement: `UPDATE "${DELIVERY_TABLE}"
-        SET status = 'CANCELED'
+        SET deliveryStatus = 'CANCELED'
         WHERE customerId = '${customerId}'
         AND orderId = '${orderId}'
         RETURNING MODIFIED NEW *`
     }
     const updates = await executeStatement(params);
 
-    return {
-        statusCode: updates.length > 0 ? 200 : 404,
-        body: JSON.stringify(updates)
-    }
+    return updates;
 }
 
 async function delivered(customerId, orderId) {
 
     const params = {
         Statement: `UPDATE "${DELIVERY_TABLE}"
-        SET status = 'DELIVERED'
+        SET deliveryStatus = 'DELIVERED'
         WHERE customerId = '${customerId}'
         AND orderId = '${orderId}'
         RETURNING MODIFIED NEW *`
     }
     const updates = await executeStatement(params);
 
-    return {
-        statusCode: updates.length > 0 ? 200 : 404,
-        body: JSON.stringify(updates)
+    return updates;
+}
+
+async function processResult(result, OK, KO, output, add) {
+    if (result.length > 0) {
+        if (add !== undefined) {
+            output[add] = result[0];
+        }
+        await sendEvent(OK, output);
+    } else {
+        await sendEvent(KO, output);
     }
+}
+
+async function sendEvent(type, detail) {
+    const params = {
+        "Entries": [ 
+           { 
+              "Detail": JSON.stringify(detail),
+              "DetailType": type,
+              "EventBusName": EVENT_BUS,
+              "Source": EVENT_SOURCE
+           }
+        ]
+    };
+    const response = await ebClient.send(new PutEventsCommand(params));
+    return response;
 }
 
 async function executeStatement(params) {

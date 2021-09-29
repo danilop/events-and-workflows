@@ -7,9 +7,9 @@
   "author": "AWS DevRel",
   "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.33.0",
-    "@aws-sdk/client-location": "^3.33.0",
-    "@aws-sdk/lib-dynamodb": "^3.33.0",
-    "axios": "^0.21.4"
+    "@aws-sdk/client-dynamodb": "^3.34.0",
+    "@aws-sdk/client-eventbridge": "^3.34.0",
+    "@aws-sdk/client-location": "^3.34.0",
+    "@aws-sdk/lib-dynamodb": "^3.34.0"
   }
 }
