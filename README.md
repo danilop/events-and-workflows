@@ -1,11 +1,11 @@
 # Events and Workflows
 
-Start by building and deploying the projext:
+Start by building and deploying the project. We will be using [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html) and make sure you are running the latest version - at the time of writing, this was 1.32.0 (sam --version):
 
 ```bash
 sam build -p # Parallel build
 
-sam deploy -g # Guided deployment,
+sam deploy -g # Guided deployments
 ```
 
 Next times, when you update the code, you can build and deploy with:
@@ -22,11 +22,11 @@ sam delete
 
 # Services
 
-Customer - customer information such as name, address, and email
-Order - to create an order orchestrating all other services, and describe the order status
-Inventory - to store inventory information of items to sell
-Payment - to make and cancel payments, it can randomly fail (see Demo below)
-Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
+* Customer - customer information such as name, address, and email
+* Order - to create an order orchestrating all other services, and describe the order status
+* Inventory - to store inventory information of items to sell
+* Payment - to make and cancel payments, it can randomly fail (see Demo below)
+* Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
 
 Event Store - to store all events, used only by the event-driven approach 
 
