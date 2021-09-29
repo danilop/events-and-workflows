@@ -28,9 +28,11 @@ sam delete
 * Payment - to make and cancel payments, it can randomly fail (see Demo below)
 * Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
 
-Event Store - to store all events, used only by the event-driven approach 
+Only for the event-driven scenario:
+* Event Store - to store all events
 
-Add - utility function to add two numbers, used only by the order create workflow
+Only for the workflow scenario:
+* Add - utility function to add two numbers, used only by the order create workflow
 
 # API Operations
 
