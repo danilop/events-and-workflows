@@ -65,12 +65,6 @@ exports.lambdaHandler = async (event, context) => {
                 case 'describe':
                     result = await describeOrder(customerId, what);
                     break;
-                case 'delivered':
-                    result = await delivered(customerId, what);
-                    break;
-                case 'cancel':
-                    result = await cancelOrder(customerId, what);
-                    break;
                 default:
                     return {
                         statusCode: 501,
@@ -78,7 +72,7 @@ exports.lambdaHandler = async (event, context) => {
                     };
             }
         }
-
+        
         const response = {
             statusCode: result.length > 0 ? 200 : 404,
             body: result.length > 0? JSON.stringify(result[0]) : "Not Found"

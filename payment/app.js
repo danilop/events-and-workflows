@@ -104,12 +104,12 @@ async function makePayment(amount) {
     }
     await executeStatement(params);
 
-    return {
+    return [{
         paymentId: paymentId,
         paymentMethod: 'CREDIT_CARD',
         amount: amount,
         status: status
-    }
+    }]
 }
 
 async function cancelPayment(paymentId) {
@@ -130,7 +130,7 @@ async function cancelPayment(paymentId) {
 
 async function processPayment(payment, OK, KO, output, add) {
     if (add !== undefined) {
-        output[add] = payment;
+        output[add] = payment[0];
     }
     if (payment.length > 0 || payment.status == 'PAID') {
         await sendEvent(OK, output);

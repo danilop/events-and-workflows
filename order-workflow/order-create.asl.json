@@ -372,7 +372,7 @@
       "Next": "Update Order (Delivery Canceled)",
       "ResultPath": "$.paid",
       "ResultSelector": {
-        "status.$": "$.ResponseBody[0].status"
+        "status.$": "$.ResponseBody.status"
       }
     },
     "Update Order (Delivery Canceled)": {
