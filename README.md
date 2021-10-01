@@ -39,13 +39,14 @@ Only for the workflow scenario:
 On the Amazon API Gateway REST API endpoint (starting a workflow):
 
 ```
-GET /order/create/{customerId}/{orderId} # To start a create order workflow (using [AWS Step Functions](https://aws.amazon.com/step-functions/))
+POST /order/create/{customerId}/{orderId} # To start a create order workflow
 ```
+
 On the Amazon API Gateway HTTP API endpoint:
 
 ```
 GET /customer/describe/{customerId}
-GET /order/create/{customerId}/{itemId} # To start an event-driven order creation (using [Amazon EventBridge](https://aws.amazon.com/eventbridge/))
+GET /order/create/{customerId}/{itemId} # To start an event-driven order creation
 GET /order/describe/{customerId}/{orderId}
 GET /inventory/describe/{itemId}
 GET /inventory/reserve/{itemId}
