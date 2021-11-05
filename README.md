@@ -22,17 +22,19 @@ sam delete
 
 # Services
 
-* Customer - customer information such as name, address, and email
-* Order - to create an order orchestrating all other services, and describe the order status
-* Inventory - to store inventory information of items to sell
-* Payment - to make and cancel payments, it can randomly fail (see Demo below)
-* Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
+- Customer - customer information such as name, address, and email
+- Order - to create an order orchestrating all other services, and describe the order status
+- Inventory - to store inventory information of items to sell
+- Payment - to make and cancel payments, it can randomly fail (see Demo below)
+- Delivery - to estimate distance and cost of a delivery, and to start, complete, or cancel a delivery
 
 Only for the event-driven scenario:
-* Event Store - to store all events
+
+- Event Store - to store all events
 
 Only for the workflow scenario:
-* Add - utility function to add two numbers, used only by the order create workflow
+
+- Add - utility function to add two numbers, used only by the order create workflow
 
 # API Operations
 
@@ -75,8 +77,8 @@ To create an order from the AWS Step Functions console, use this input to start 
 
 ```json
 {
-	"customerId": "customer-1",
-	"itemId": "item-1"
+  "customerId": "customer-1",
+  "itemId": "item-1"
 }
 ```
 
@@ -144,6 +146,8 @@ curl -i https://a1b2c3d4e5.execute-api.eu-west-1.amazonaws.com/order/create/cust
 
 From the output of the command, write down the `customerId` and the `orderId`, they together identify a specific order.
 
+To learn how the service was designed using events, see [Event design table](event-table.md)
+
 ## EventStoreFunction logs
 
 Look at the logs of the `EventStoreFunction` Lambda function. The actual name of the function will be in the form `<stack-name>-EventStoreFunction-<unique-ID>`. To find the logs, in the [Lambda console](https://console.aws.amazon.com/lambda/), select the function, then the **Monitor** tab, then choose **View logs in CloudWatch**. Note that there are no logs before the first execution of a function.
@@ -151,6 +155,7 @@ Look at the logs of the `EventStoreFunction` Lambda function. The actual name of
 Close the left pad and choose **View as text**. You can see all the event published by different services processing the order. Now there is only an order. When there are more than one order in the logs, you can filter by `orderId`, for example `"2021-09-29T16:50:20.784Z"`, including the double quotes at the start and at the end.
 
 In order, the events for the order you created are:
+
 - `OrderCreated` (from the Order service)
 - `ItemReserved` (from the Inventory service)
 - `ItemDescribed` (from the Inventory service)
@@ -163,6 +168,7 @@ The Payment service fails with a probability passed to the Lambda `PaymentFuncti
 ## Payment successful
 
 In case you find the PaymentMade event, the next events are:
+
 - ItemRemoved (from the Inventory service)
 - DeliveryStarted (from the Delivery Service)
 
@@ -186,8 +192,8 @@ In the [EventBridge console](https://console.aws.amazon.com/events/), choose **E
 
 ```json
 {
-	"customerId": "customer-1",
-    "orderId": "..."
+  "customerId": "customer-1",
+  "orderId": "..."
 }
 ```
 
@@ -218,6 +224,7 @@ If you send the `DeliveryCanceled` event, these are the new events in the logs:
 To force a failed payment, you can increase the value of the `PAYMENT_FAIL_PROBABILITY` environment variable in the configuration of the `PaymentFunction` (for example, to `0.9` or `1.0`). You can change the value directly in the Lambda console or in the SAM template (and deploy).
 
 In case you find the `PaymentFailed` event, the next events are:
+
 - `ItemUnreserved` (from the Inventory service)
 
 In the `InventoryTable`, the order has status `PAYMENT_FAILED`.
@@ -227,6 +234,7 @@ In the `InventoryTable`, the order has status `PAYMENT_FAILED`.
 The `EventStoreFunction` is storing all events in CloudWatch Logs and in the `EventStoreTable` in DynamoDB.
 
 The `EventStoreTable` has a primary ket composed by:
+
 - `who` : `C#<customerId>` – In this way, you can quickly get all info for a customer. Events not related to a customer will use a different initial letter. For example, product updated can set this to `P#<productId>`
 - `timeWhat` : `timestamp#eventType`
 - `eventSource` : the source of the event
