@@ -34,9 +34,9 @@ exports.lambdaHandler = async (event, context) => {
                 await processPayment(await cancelPayment(order.order.paymentId),
                     'PaymentCanceled', 'ErrorPaymentCanceled', order, 'payment');
                 break;
-                default:
-                console.error(`Action '${action}' not implemented.`);
-        }
+            default:
+                console.error(`Event '${eventType}' not implemented.`);
+            }
     } else {
 
         // API Gateway Invocation

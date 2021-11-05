@@ -1,8 +1,8 @@
 {
     "itemId": {"S": "item-1"},
-    "description": {"S": "Item 1"},
+    "description": {"S": "Big Smarphone"},
     "image": {"S": "s3://bucket/prefix/file.jpg"},
-    "price": {"N": "5.99"},
+    "price": {"N": "399.99"},
     "available": {"N": "10"},
     "reserved": {"N": "0"}
 }

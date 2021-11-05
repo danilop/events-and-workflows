@@ -46,7 +46,7 @@ exports.lambdaHandler = async (event, context) => {
                     order, 'item');
                 break;
             default:
-                console.error(`Action '${action}' not implemented.`);
+                console.error(`Event '${eventType}' not implemented.`);
         }
     } else {
 
@@ -103,8 +103,8 @@ async function describeItem(itemId) {
 async function reserveItem(itemId) {
     const params = {
         Statement: `UPDATE "${INVENTORY_TABLE}"
-        SET available=available-1
-        SET reserved=reserved+1
+        SET available = available - 1
+        SET reserved = reserved + 1
         WHERE itemId = '${itemId}' AND available > 0
         RETURNING MODIFIED NEW *`
     }
@@ -114,8 +114,8 @@ async function reserveItem(itemId) {
 async function unreserveItem(itemId) {
     const params = {
         Statement: `UPDATE "${INVENTORY_TABLE}"
-        SET available=available+1
-        SET reserved=reserved-1
+        SET available = available + 1
+        SET reserved = reserved - 1
         WHERE itemId = '${itemId}' AND reserved > 0
         RETURNING MODIFIED NEW *`
     }
@@ -125,7 +125,7 @@ async function unreserveItem(itemId) {
 async function removeReservedItem(itemId) {
     const params = {
         Statement: `UPDATE "${INVENTORY_TABLE}"
-        SET reserved=reserved-1
+        SET reserved = reserved - 1
         WHERE itemId = '${itemId}' AND reserved > 0
         RETURNING MODIFIED NEW *`
     }
@@ -135,7 +135,7 @@ async function removeReservedItem(itemId) {
 async function returnItemAsAvailable(itemId) {
     const params = {
         Statement: `UPDATE "${INVENTORY_TABLE}"
-        SET available=available+1
+        SET available = available + 1
         WHERE itemId = '${itemId}'
         RETURNING MODIFIED NEW *`
     }

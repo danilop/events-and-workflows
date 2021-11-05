@@ -53,7 +53,7 @@ exports.lambdaHandler = async (event, context) => {
                     order, "delivery");
                 break;
             default:
-            console.error(`Action '${action}' not implemented.`);
+                console.error(`Event '${eventType}' not implemented.`);
         }
     } else {
 

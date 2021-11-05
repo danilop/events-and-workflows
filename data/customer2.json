@@ -1,6 +1,6 @@
 {
     "customerId": {"S": "customer-2"},
-    "description": {"S": "Customer 2"},
+    "description": {"S": "Customer Two"},
     "name": {"S": "British Museum"},
     "email": {"S": "danilop@amazon.com"},
     "address": {"S": "Great Russell St, London WC1B 3DG, UK"}

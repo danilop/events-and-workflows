@@ -80,10 +80,10 @@ To create an order from the AWS Step Functions console, use this input to start 
 }
 ```
 
-To create an order from the command line (use your CreateOrderApi endpoint in the CloudFromation outputs):
+To create an order from the command line (use your OrderCreateWorkflowApi endpoint in the CloudFormation outputs):
 
 ```bash
-curl -X POST -d '{"customerId":"customer-1","itemId":"item-1"}' -H "Content-Type: application/json" <CreateOrderApi>
+curl -X POST -d '{"customerId":"customer-1","itemId":"item-1"}' -H "Content-Type: application/json" <OrderCreateWorkflowApi>
 ```
 
 An order may fail immediately if there is no availability for an item. You can reload the sample data again to reset availabilities for a demo.

@@ -47,7 +47,7 @@ exports.lambdaHandler = async (event, context) => {
                 await updateOrder('DELIVERING', order);
                 break;
             default:
-                console.error(`Action '${action}' not implemented.`);
+                console.error(`Event '${eventType}' not implemented.`);
         }
     } else {
 
