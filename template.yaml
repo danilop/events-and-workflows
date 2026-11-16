@@ -40,7 +40,7 @@ Resources:
     Properties:
       CodeUri: event-store/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           STORE_TABLE: !Ref EventStoreTable
@@ -81,7 +81,7 @@ Resources:
     Properties:
       CodeUri: order/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           ORDER_TABLE: !Ref OrderTable
@@ -177,7 +177,7 @@ Resources:
     Properties:
       CodeUri: inventory/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           INVENTORY_TABLE: !Ref InventoryTable
@@ -238,7 +238,7 @@ Resources:
     Properties:
       CodeUri: payment/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           PAYMENT_TABLE: !Ref PaymentTable
@@ -297,7 +297,7 @@ Resources:
     Properties:
       CodeUri: customer/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           CUSTOMER_TABLE: !Ref CustomerTable
@@ -369,7 +369,7 @@ Resources:
     Properties:
       CodeUri: delivery/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
       Environment:
         Variables:
           PLACE_INDEX: !Ref MyPlaceIndex
@@ -433,7 +433,7 @@ Resources:
     Properties:
       CodeUri: add/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs24.x
 
 Outputs:
 
